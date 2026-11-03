@@ -9,7 +9,7 @@
 市场只在较新的 dsh 上出现，例如 DSH Desktop。命令行 dsh 0.1.0-rc.6 仍只有登录页。
 
 ```bash
-dsh plugin --profile web add github:daffffffffffffff/dsh-plugin-shengsuanyun
+dsh plugin --profile web add github:SSYCloud/dsh-plugin-shengsuanyun
 ```
 
 装完后重新打开 dsh。

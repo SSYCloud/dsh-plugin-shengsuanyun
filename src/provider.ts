@@ -1,7 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { LLM_SETTINGS, PROVIDER, defaultProviderProfile, modelSeed } from './constants.js'
 import { providerNeedsDeclare, withRememberedModel } from './flow.js'
+import { readNamespace, settingsNamespace, updateNamespace } from './settings.js'
 
 const LLM_NS = settingsNamespace(LLM_SETTINGS)
 
@@ -19,21 +19,36 @@ function modelsOf(section: unknown): readonly { readonly id: string }[] | undefi
 
 /** Add the desktop route once. A route that is already there is not rewritten. */
 export async function ensureProvider(ctx: Context): Promise<void> {
-  const current = ctx.settings.get(LLM_NS)
-  if (current === undefined) {
+  const section = readNamespace(ctx, LLM_NS)
+  if (section === undefined) {
     ctx.logger.warn('shengsuanyun: llm-pi-ai settings are not registered, so the provider route was not added')
     return
   }
-  if (!providerNeedsDeclare(current)) return
-  await ctx.settings.update(LLM_NS, { providers: { [PROVIDER]: defaultProviderProfile() } })
+  if (!providerNeedsDeclare(section.value)) return
+  const written = await updateNamespace(
+    ctx,
+    LLM_NS,
+    { providers: { [PROVIDER]: defaultProviderProfile() } },
+    section.revision,
+  )
+  if (!written) {
+    ctx.logger.warn('shengsuanyun: this host does not accept settings form writes, so the provider route was not added')
+    return
+  }
   ctx.logger.info('shengsuanyun: declared provider route shengsuanyun')
 }
 
 /** Put a chosen chat model on the route without dropping models already listed. */
 export async function rememberModel(ctx: Context, modelId: string): Promise<void> {
-  const next = withRememberedModel(modelsOf(ctx.settings.get(LLM_NS)), modelId, modelSeed(modelId))
+  const section = readNamespace(ctx, LLM_NS)
+  const next = withRememberedModel(modelsOf(section?.value), modelId, modelSeed(modelId))
   if (next === undefined) return
-  await ctx.settings.update(LLM_NS, { providers: { [PROVIDER]: { models: next } } })
+  await updateNamespace(
+    ctx,
+    LLM_NS,
+    { providers: { [PROVIDER]: { models: next } } },
+    section?.revision,
+  )
 }
 
 export async function selectDefaultModel(ctx: Context, modelId: string): Promise<void> {

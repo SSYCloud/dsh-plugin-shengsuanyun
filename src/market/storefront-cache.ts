@@ -1,7 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type { SettingsScope } from '@deepseek-ai/dsh-settings'
-import { settingsNamespace, type SettingsProvider } from '@deepseek-ai/dsh-settings'
+import { settingsNamespace } from '../settings.js'
 import type { StorefrontEntry, StorefrontRead } from './storefront.js'
 
 /**
@@ -151,6 +150,19 @@ export interface StorefrontCacheOptions {
 }
 
 /**
+ * The settings service below 0.1.7, where a plugin still registered its own
+ * namespace and got the value back through a scope.
+ */
+interface RegisteredScope {
+  get(): StorefrontCacheDocument
+  update(patch: StorefrontCacheDocument): Promise<unknown> | unknown
+}
+
+interface RegisteringSettings {
+  readonly register?: (ns: unknown, schema: unknown) => RegisteredScope
+}
+
+/**
  * Wraps a storefront read in a last-good cache.
  *
  * Persistence goes through the standard settings service, matching how the
@@ -158,6 +170,11 @@ export interface StorefrontCacheOptions {
  * restart instead of paying for a cold read on every launch. The settings service
  * is optional: a composition without it keeps the cache in memory and still
  * works, rather than failing to load the plugin.
+ *
+ * dsh 0.1.7 (#677) derives namespaces from each entry's Config schema and has no
+ * `register`, so on that host the cache is memory-only instead of throwing. The
+ * storefront is a rebuildable cache, so losing it across a restart costs one
+ * cold read and nothing else.
  *
  * A failed refresh never destroys what is already known. That matters more here
  * than freshness — a transient Market outage must not blank a storefront the user
@@ -174,11 +191,10 @@ export function createStorefrontCache(
   // the settings file). `settings` is a declared dependency, so it is present in any
   // composition that applied at all; the optional read only keeps the cache honest
   // for a trimmed or test context.
-  const settings: SettingsProvider | undefined = ctx.settings
-  const scope: SettingsScope<StorefrontCacheDocument> | undefined = settings?.register(
-    STOREFRONT_NAMESPACE,
-    StorefrontCacheSchema,
-  )
+  const settings = (ctx as { settings?: unknown }).settings as RegisteringSettings | undefined
+  const scope: RegisteredScope | undefined = typeof settings?.register === 'function'
+    ? settings.register(STOREFRONT_NAMESPACE, StorefrontCacheSchema)
+    : undefined
   let memory: StorefrontSnapshot | undefined
 
   const persisted = (): StorefrontSnapshot | undefined => {
